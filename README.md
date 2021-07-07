@@ -5,12 +5,14 @@ Some benefits of Netbox are a strictly enforced naming and relationship hierarch
 
 ## Files:
 **migrate.py**
+
 Migrate data from RT to NB. Meant to be run once without interuption, although some bools exist to skip steps.
 Steps that depend on others create cached data on disk, but the best procedure is to fully run once on an empty NB instance.
 
 Package requirements: python-netbox, python-slugify
 
 **vm.py**
+
 Update the uniquely named VMs in NB with memory, disk and cpu data from RHEVM instances.
 
 Package requirements: python-netbox, python-slugify, bs4
