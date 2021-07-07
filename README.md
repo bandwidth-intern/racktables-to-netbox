@@ -1,6 +1,7 @@
 # racktables-to-netbox
 
-Scripts to export Racktables data, accessible through a SQL connection, into a Netbox instance, accessible at a URL.
+Scripts to export Racktables data, accessible through a SQL connection, into a [Netbox](https://github.com/netbox-community/netbox/) instance, accessible at a URL. An easy way to test NB is with [netbox-docker](https://github.com/netbox-community/netbox-docker).
+
 Some benefits of Netbox are a strictly enforced naming and relationship hierarchy, custom scripts and reports, easy REST API with many wrappers [like this one](https://github.com/jagter/python-netbox).
 
 ## Files:
