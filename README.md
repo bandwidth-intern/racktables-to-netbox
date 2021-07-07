@@ -1,7 +1,7 @@
 # racktables-to-netbox
 
 Scripts to export Racktables data, accessible through a SQL connection, into a Netbox instance, accessible at a URL.
-Some benefits of Netbox are a strictly enforced naming and relationship hierarchy, custom scripts, cutom reports, easy REST API with many wrappers (like this one)[https://github.com/jagter/python-netbox].
+Some benefits of Netbox are a strictly enforced naming and relationship hierarchy, custom scripts and reports, easy REST API with many wrappers [like this one](https://github.com/jagter/python-netbox).
 
 ## Files:
 **migrate.py**
