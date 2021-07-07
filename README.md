@@ -1,8 +1,14 @@
 # racktables-to-netbox
 
-Scripts to export Racktables data, accessible through a SQL connection, into a [Netbox](https://github.com/netbox-community/netbox/) instance, accessible at a URL. An easy way to test NB is with [netbox-docker](https://github.com/netbox-community/netbox-docker).
-
-Some benefits of Netbox are a strictly enforced naming and relationship hierarchy, custom scripts and reports, easy REST API with many wrappers [like this one](https://github.com/jagter/python-netbox).
+Scripts to export Racktables data, accessible through a SQL connection, into a [Netbox](https://github.com/netbox-community/netbox/) instance, accessible at a URL. An easy way to test NB is with [netbox-docker](https://github.com/netbox-community/netbox-docker). Some benefits of Netbox are a strictly enforced naming and relationship hierarchy, custom scripts and reports, easy REST API with many wrappers [like this one](https://github.com/jagter/python-netbox). The `migrate.py` script will transfer:
+- Sites and racks
+- Device places in racks and reservations
+- All unracked stuff, notably VMs and their clusters
+- Parent child relationships like servers in chassises, patch panels in patch panels
+- IPs, networks, VLANs
+- Interfaces and their associated IP
+- Connections between interfaces really the 'ports and links' catagory
+- Tags, labels, asset numbers (still need to make sure asset nos are grabbed from everywhere)
 
 ## Files:
 **migrate.py**
