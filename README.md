@@ -15,7 +15,7 @@ Package requirements: python-netbox, python-slugify
 
 Update the uniquely named VMs in NB with memory, disk and cpu data from RHEVM instances.
 
-Package requirements: python-netbox, python-slugify, bs4
+Package requirements: python-netbox, bs4
 
 **free.py**
 
