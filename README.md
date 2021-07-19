@@ -8,7 +8,7 @@ Scripts to export Racktables data, accessible through a SQL connection, into a [
 - IPs, networks, VLANs
 - Interfaces and their associated IP. Note that if an "OS interface" in "IP addresses" is same as "local name" in "ports and links," the interface is not duplicated
 - Connections between interfaces really the 'ports and links' catagory
-- Tags, labels, asset numbers (still need to make sure asset nos are grabbed from everywhere)
+- Tags, labels, asset numbers
 
 ## Files:
 **migrate.py**
