@@ -16,20 +16,20 @@ Scripts to export Racktables data, accessible through a SQL connection, into a [
 Migrate data from RT to NB. Meant to be run once without interuption, although some bools exist to skip steps.
 Steps that depend on others create cached data on disk, but the best procedure is to fully run once on an empty NB instance.
 
-Python package requirements (python3 -m pip install): python-netbox, python-slugify
+Python package requirements: `python3 -m pip install python-netbox python-slugify`
 
 **vm.py**
 
 Update the uniquely named VMs in NB with memory, disk and cpu data from RHEVM instances.
 Code is there to compare NICs and IPs as well.
 
-Python package requirements (python3 -m pip install): python-netbox, bs4
+Python package requirements `python3 -m pip install python-netbox bs4`
 
 **free.py**
 
 List the number of free IP addresses in NB based on tags on prefixes.
 
-Python package requirements (python3 -m pip install): python-netbox
+Python package requirements `python3 -m pip install python-netbox`
 
 ## Notes on python-netbox:
 - As of July 2021 the pip code is not up to date to the Github repo, so you must manually update the `dcim.py` file's method `create_interface_connection` to match the up to date one on Github.
