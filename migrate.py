@@ -6,70 +6,97 @@ import os
 import time
 import ipaddress
 import random
+import threading
 
 # Messy script to transfer Racktables SQL to NetBox
 # Set "MAX_PAGE_SIZE=0" in "env/netbox.env"
 # Add the printed custom_fields to initialization/custom_fields.yaml for all the fields from Racktables
 
 # Set all the bools to True and run once through for correct result, they were for debugging problems. Some info is cached with pickle, though
+
 CREATE_VLAN_GROUPS =           True
 CREATE_VLANS =                 True
+# This also creates the clusters, which are needed for all devices
 CREATE_MOUNTED_VMS =           True
 CREATE_UNMOUNTED_VMS =         True
 CREATE_RACKED_DEVICES =        True
+# Non racked devices depend on racked devices being created first
 CREATE_NON_RACKED_DEVICES =    True
+# Interfaces rely on devices being created
 CREATE_INTERFACES =            True
+# Interface connections depend on all interfaces created
 CREATE_INTERFACE_CONNECTIONS = True
 CREATE_IPV4 =                  True
 CREATE_IPV6 =                  True
+# IP space depends on interfaces being created
+CREATE_IP_NETWORKS =           True
+CREATE_IP_ALLOCATED =          True
+CREATE_IP_NOT_ALLOCATED =      True
+
+
 # The length to exceed for a site to be considered a location (like an address) not a site
 SITE_NAME_LENGTH_THRESHOLD = 10
 
 rt_host = '127.0.0.1'
 rt_port = 3306
 rt_user = 'root'
-rt_db = 'test'
+rt_db = 'test1'
+connection = pymysql.connect(host=rt_host,user=rt_user,db=rt_db, port=rt_port)
 
-nb_host = '10.248.48.4'
-nb_port = 8000
+nb_host = 
+nb_port = 
 nb_token = '0123456789abcdef0123456789abcdef01234567'
 
-connection = pymysql.connect(host=rt_host,user=rt_user,db=rt_db, port=rt_port)
 netbox = NetBox(host=nb_host, port=nb_port, use_ssl=False, auth_token=nb_token)
 
-# If there are more of these in your instance, add them here, this isn't all
-# Used for looking up non-racked items
+# This might not be all. Used for looking up non-racked items. Key names are for reference
 objtype_id_names = {
+1: "BlackBox",
 2: "PDU",
+3: "Shelf",
 4: "Server",
 5: "DiskArray",
 7: "Router",
 8: "Network Switch",
 9: "Patch Panel",
+10: "CableOrganizer",
+11: "spacer",
+12: "UPS",
 13: "Modem",
+15: "console",
+447: "multiplexer",
+798: "Network Security",
 1502: "Server Chassis",
+1398: "Power supply",
+1503: "Network chassis",
+1644: "serial console server",
+1787: "Management interface",
 50003: "Circuit",
+50013: "SAN",
 50044: "SBC",
 50064: "GSX",
 50065: "EMS",
 50066: "PSX",
 50067: "SGX",
 50083: "SBC SWE",
+# Don't create these with the unracked devices
 # 1504: "VM",
 # 1505: "VM Cluster",
+# 1560: "Rack",
+# 1561: "Row",
+# 1562: "Location",
 }
 
 # Manufacturer strings that exist in RT. Pulled out of "HW Type" to set as the manufacturer
 racktables_manufacturers = {'Generic', 'Dell', 'MicroSoft', 'F5', 'ExtremeXOS', 'Netapp', 'Open Solaris', 'EMC', 'SlackWare', 'RH', 'FreeBSD', 'Edge-Core', 'SMC', 'Force10', 'Cyclades', 'IBM', 'Linksys', 'IronWare', 'Red', 'Promise', 'Extreme', 'QLogic', 'Marvell', 'SonicWall', 'Foundry', 'Juniper', 'APC', 'Raritan', 'Xen', 'NEC', 'Palo', 'OpenSUSE', 'Sun', 'noname/unknown', 'NetApp', 'VMware', 'Moxa', 'Tainet', 'SGI', 'Mellanox', 'Vyatta', 'Raisecom', 'Gentoo', 'Brocade', 'Enterasys', 'Dell/EMC', 'VMWare', 'Infortrend', 'OpenGear', 'Arista', 'Lantronix', 'Huawei', 'Avocent', 'SUSE', 'ALT_Linux', 'OpenBSD', 'Nortel', 'Univention', 'JunOS', 'MikroTik', 'NetBSD', 'Cronyx', 'Aten', 'Intel', 'PROXMOX', 'Ubuntu', 'Motorola', 'SciLin', 'Fujitsu', 'Fiberstore', '3Com', 'D-Link', 'Allied', 'Fortigate', 'Debian', 'HP', 'NETGEAR', 'Pica8', 'TPLink', 'Fortinet', 'RAD', 'NS-OS', 'Cisco', 'Alcatel-Lucent', 'CentOS', 'Hitachi'}
 
-# Same parent/child relationship for "Patch Panel", and "Server Chassis"
-parent_objtype_ids = (1502, 9)
-
 # Pairs of parent objtype_id, then child objtype_id
 parent_child_objtype_id_pairs = (
-	(1502, 4), # Server inside a Server Chassis
-	(9, 9), # Patch Panel inside a Patch Panel
+	(1502, 4),# Server inside a Server Chassis
+	(9, 9),# Patch Panel inside a Patch Panel
 )
+
+parent_objtype_ids = [pair[0] for pair in parent_child_objtype_id_pairs]
 
 global_names = set()
 global_tags = set()
@@ -85,6 +112,11 @@ global_physical_object_ids = set()
 # This is filled in during create_non_racked_devices function
 global_non_physical_object_ids = set()
 
+# asset_no from racktables. Used to find the duplicates and add -1
+asset_tags = set()
+
+# object_id to "Chassis Serial" number if it exists
+serials = dict()
 
 # Used for separating identical objects in different spots in the same rack
 # Have not ca;lculated overflow yet, but 32-126 is a lot for one rack of 45/2 slots for items
@@ -161,7 +193,7 @@ def get_manufacturer_role_type(cursor, racktables_object_id, objtype_id, height,
 	# Add the height to the type model, as well as the binary full_depth or not
 	hw_type = get_hw_type(racktables_object_id)
 	if hw_type:
-		print("HW:", hw_type)
+		# print("HW:", hw_type)
 		device_type = hw_type
 
 		for racktables_manufacturer in racktables_manufacturers:
@@ -190,9 +222,9 @@ def createDeviceAtLocationInRack(device_name, face, start_height, device_role, m
 	global global_devices
 	global global_names
 	global global_device_roles
-	global global_tags
 	global global_manufacturers
 	global global_device_types
+	global asset_tags
 
 	name_at_location = None
 	id_at_location = None
@@ -204,7 +236,7 @@ def createDeviceAtLocationInRack(device_name, face, start_height, device_role, m
 			break
 
 	if name_at_location == None:
-		print(device_name, "being created at", rack_name, start_height, face)
+		# print(device_name, "being created at", rack_name, start_height, face)
 		name_at_location = device_name
 
 		if device_name in global_names:
@@ -223,7 +255,15 @@ def createDeviceAtLocationInRack(device_name, face, start_height, device_role, m
 		# Check if the device is in a VM cluster and if so add it to that when creating it in Netbox
 		device_in_vm_cluster, device_vm_cluster_name, parent_entity_ids = device_is_in_cluster(racktables_device_id)
 		custom_fields = get_custom_fields(cursor, racktables_device_id)
-		device = netbox.dcim.create_device(custom_fields=custom_fields,face=face,cluster={"name":device_vm_cluster_name} if device_in_vm_cluster else None,asset_no=asset_no if asset_no else None,position=start_height,name=name_at_location,device_role=device_role,manufacturer={"name":manufacturer},device_type=device_type_model,site_name=site_name,rack={"name":rack_name})
+		serial = serials[racktables_device_id] if racktables_device_id in serials else ""
+
+		asset_no = asset_no.strip() if asset_no else None
+		if asset_no and asset_no in asset_tags:
+			asset_no = asset_no+ "-1"
+
+		device = netbox.dcim.create_device(custom_fields=custom_fields,face=face,cluster={"name":device_vm_cluster_name} if device_in_vm_cluster else None,asset_tag=asset_no,serial=serial,position=start_height,name=name_at_location,device_role=device_role,manufacturer={"name":manufacturer},device_type=device_type_model,site_name=site_name,rack={"name":rack_name})
+		asset_tags.add(asset_no)
+
 		id_at_location = device['id']
 
 		global_names.add(name_at_location)
@@ -235,11 +275,10 @@ def createDeviceAtLocationInRack(device_name, face, start_height, device_role, m
 	return name_at_location, id_at_location
 
 # Pass the list of atoms into this and have the devices built to the appropriate size
-def createObjectsInRackFromAtoms(cursor, atoms, rack_name):
+def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 	
 	debug_splits = False
 	
-	global global_tags
 	global global_physical_object_ids
 
 	# Put positions into dict based on Id
@@ -320,7 +359,7 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name):
 		# Add the last few items		
 		if internal_separated_Ids == True:
 			added_atom_objects[Id + current_hash_addition] = atoms_dict[Id][old_counter:]
-			print(added_atom_objects[Id + current_hash_addition])
+			# print(added_atom_objects[Id + current_hash_addition])
 
 	# Add all the key,value pairs from added_atom_objects to the original atoms_dict and then remove the original Ids
 	if separated_Ids == True:
@@ -365,11 +404,15 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name):
 			print("Got a 0 len for", real_id(Id))
 			continue
 
+		start_height = min([atom[1] for atom in atoms_dict[Id]])
+		height = max([atom[1] for atom in atoms_dict[Id]]) - start_height + 1
+
 		# UPDATE HERE: Should this be == str or startswith if there are multiple reservation splits???
 		if Id == str(None) + first_ascii_character:
 			try:
-				print("Reservation!")
-				# netbox.dcim.create_reservation(rack_num=, units=, description=""):
+				print("Reservation at {}")
+				units = list(range(start_height, start_height+height))
+				netbox.dcim.create_reservation(rack_num=rack_id,units=units,description=".",user='admin')
 				pass
 			except:
 				pass
@@ -387,21 +430,21 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name):
 		# Whether front only, rear only, or both
 		if 'rear' not in [atom[2] for atom in atoms_dict[Id]]:
 			face = 'front'
+			is_full_depth = False
 		elif 'front' not in [atom[2] for atom in atoms_dict[Id]]:
 			face = 'rear'
+			is_full_depth = False
 		else:
-			face = 'both'
-
-		start_height = min([atom[1] for atom in atoms_dict[Id]])
-		height = max([atom[1] for atom in atoms_dict[Id]]) - start_height + 1
-		is_full_depth = face == 'both'
+			# face = 'both'
+			# There is no 'both' in netbox, so use 'front' instead
+			face = 'front'
+			is_full_depth = True
 		
 		manufacturer, device_role, device_type_model = get_manufacturer_role_type(cursor, real_id(Id), objtype_id, height, is_full_depth)
 
 		if device_role not in global_device_roles:
 			netbox.dcim.create_device_role(device_role,"ffffff",slugify(device_role))
 			global_device_roles.add(device_role)
-			print(device_role)
 
 		if manufacturer not in global_manufacturers:
 			netbox.dcim.create_manufacturer(manufacturer, slugify(manufacturer))
@@ -421,7 +464,7 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name):
 
 		# Try to create a device at specific location. 
 		# Function looks for the location to be open, then tries different names since device names must be unique
-		device_name, device_id = createDeviceAtLocationInRack(device_name=device_name, face=face if face != 'both' else 'front', start_height=start_height, device_role=device_role, manufacturer=manufacturer, device_type_model=device_type_model,site_name= site_name,rack_name=rack_name, asset_no=asset_no, racktables_device_id=real_id(Id))
+		device_name, device_id = createDeviceAtLocationInRack(device_name=device_name, face=face, start_height=start_height, device_role=device_role, manufacturer=manufacturer, device_type_model=device_type_model,site_name= site_name,rack_name=rack_name, asset_no=asset_no, racktables_device_id=real_id(Id))
 
 		# Store all the device object_ids and names in the rack to later create the interfaces and ports
 		global_physical_object_ids.add((device_name, info[0], device_id))
@@ -475,8 +518,8 @@ def get_custom_fields(cursor, racktables_object_id, initial_dict=None):
 
 	for attr_id,string_value,uint_value in attributes:
 		
-		# Skip the HW Type because this is used for the type and height
-		if attr_id == 2 or attr_id == 27:
+		# Skip the HW Type because this is used for the type and height and "Serial Tag"
+		if attr_id == 2 or attr_id == 27 or attr_id == 10014:
 			continue
 
 		custom_fields[slugified_attributes[attr_id]] = string_value if string_value else uint_value
@@ -624,8 +667,15 @@ def create_parent_child_devices(cursor, data, objtype_id):
 
 			device_tags = getTags(cursor = cursor, entity_realm="object", entity_id = racktables_device_id)
 			custom_fields = get_custom_fields(cursor, racktables_device_id, {"Device_Label": label})
-			print("Creating device", object_name, device_type_model, device_role, manufacturer, site_name)
-			added_device = netbox.dcim.create_device(name=object_name,cluster={"name": device_vm_cluster_name} if device_in_vm_cluster else None,asset_no=asset_no if asset_no else None, custom_fields=custom_fields, device_type=device_type_model, device_role=device_role, site_name=site_name, comment=comment[:200] if comment else "",tags=device_tags)
+			serial = serials[racktables_device_id] if racktables_device_id in serials else ""
+			
+			asset_no = asset_no.strip() if asset_no else None
+			if asset_no and asset_no in asset_tags:
+				asset_no = asset_no+ "-1"
+
+			# print("Creating device \"{}\"".format(object_name), device_type_model, device_role, manufacturer, site_name, asset_no)		
+			added_device = netbox.dcim.create_device(name=object_name,cluster={"name": device_vm_cluster_name} if device_in_vm_cluster else None,asset_tag=asset_no, serial=serial,custom_fields=custom_fields, device_type=device_type_model, device_role=device_role, site_name=site_name,comment=comment[:200] if comment else "",tags=device_tags)
+			asset_tags.add(asset_no)
 
 			# Later used for creating interfaces
 			global_non_physical_object_ids.add((object_name, racktables_device_id, added_device['id']))
@@ -644,7 +694,7 @@ def create_parent_child_devices(cursor, data, objtype_id):
 				# print(new_bay_name, is_child_parent_name)
 				existing_device_bays[is_child_parent_name].add(new_bay_name)
 
-				netbox.dcim.create_device_bay(new_bay_name, parent_device_id=is_child_parent_id, installed_device_id=added_device['id'])
+				netbox.dcim.create_device_bay(new_bay_name, device_id=is_child_parent_id, installed_device_id=added_device['id'])
 
 	return not_created_parents
 
@@ -732,11 +782,14 @@ Interface_Name:
 
 	# For the HW Type field: use this as the base name for the device type
 
+	cursor.execute("SELECT object_id,string_value FROM AttributeValue WHERE attr_id=10014")
+	for object_id,string_value in cursor.fetchall():
+		serials[object_id] = string_value if string_value else ""
+
 	# Turn the uint_value for attr_id 2 in table "AttributeValue" into a string from the table "Dictionary"
 	cursor.execute("SELECT dict_key,dict_value FROM Dictionary")
 	for dict_key,dict_value in cursor.fetchall():
 		hw_types[dict_key] = dict_value.strip("[]").split("|")[0].strip().replace("%"," ")
-		print(hw_types[dict_key])
 
 	# Map the racktables id to the name to add to custom fields later
 	cursor.execute("SELECT id,type,name FROM Attribute")
@@ -821,12 +874,14 @@ Interface_Name:
 							counter += 1
 				
 
-				print(vlan_group_name, vlan_id, name)
+				# print(vlan_group_name, vlan_id, name)
 				try:
 					created_vlan = netbox.ipam.create_vlan(group={"name":vlan_group_name},vid=vlan_id,vlan_name=name)
 					network_id_group_name_id[net_id] = (vlan_group_name, vlan_name, created_vlan['id'])
+					# print("created", vlan_group_name,vlan_id,name)
 
 				except:
+					print(vlan_group_name,vlan_id,name)
 					print("Something went wrong here\n\n")
 				
 				vlans_for_group[vlan_group_name].add(name)
@@ -841,7 +896,7 @@ Interface_Name:
 		existing_cluster_names = set(cluster['name'] for cluster in netbox.virtualization.get_clusters())
 		existing_virtual_machines = set(virtual_machine['name'] for virtual_machine in netbox.virtualization.get_virtual_machines())
 
-		print("Got {} existing virtual machines".format(len(existing_virtual_machines)))
+		# print("Got {} existing virtual machines".format(len(existing_virtual_machines)))
 
 		vm_counter = 0
 		cursor.execute("SELECT id,name,asset_no,label FROM Object WHERE objtype_id=1505;")
@@ -875,6 +930,7 @@ Interface_Name:
 
 					netbox.virtualization.create_virtual_machine(virtual_machine_name, cluster_name, tags=virtual_machine_tags, comments=virtual_machine_comment[:200] if virtual_machine_comment else "",custom_fields= {"VM_Label": virtual_machine_label[:200] if virtual_machine_label else "", "VM_Asset_No": virtual_machine_asset_no if virtual_machine_asset_no else ""})
 					existing_virtual_machines.add(virtual_machine_name)
+					# print("Created", virtual_machine_name)
 				
 				else:
 					# print(virtual_machine_name, "exists")
@@ -908,13 +964,12 @@ Interface_Name:
 
 				netbox.virtualization.create_virtual_machine(virtual_machine_name, unmounted_cluster_name, tags=virtual_machine_tags, comments=virtual_machine_comment[:200] if virtual_machine_comment else "", custom_fields={"VM_Label": virtual_machine_label[:200] if virtual_machine_label else "", "VM_Asset_No": virtual_machine_asset_no if virtual_machine_asset_no else ""})
 				existing_virtual_machines.add(virtual_machine_name)
-					
+
 			else:
 				# print(virtual_machine_name, "exists")
 				pass
 					
 			vm_counter += 1
-	# print(vm_counter)
 
 
 	# Mpa interface integer type to the string type
@@ -946,16 +1001,17 @@ Interface_Name:
 
 		cursor.execute("SELECT id,name,label,asset_no,comment FROM Object WHERE objtype_id=1562")
 		sites = cursor.fetchall()
-		for site in sites:
+		for site_id, site_name, site_label, site_asset_no, site_comment in sites:
 
-			site_name = site[1]
 			if not netbox.dcim.get_sites(name=site_name) or True:
 				
 				if len(site_name) > SITE_NAME_LENGTH_THRESHOLD:
 					print("This is probably a location (address)", site_name)
 					try:
+						# Create location
 						pass
 					except:
+						# Location exists
 						pass
 
 					continue
@@ -967,16 +1023,13 @@ Interface_Name:
 				except:
 					pass
 
-				for row in getRowsAtSite(cursor, site[0]):
-					row_name = row[1]
-					for rack in getRacksAtRow(cursor,row[0]):
+				for row_id, row_name, row_label, row_asset_no, row_comment in getRowsAtSite(cursor, site_id):
+					for rack_id, rack_name, rack_label, rack_asset_no, rack_comment in getRacksAtRow(cursor,row_id):
 						# Get rack height from table AttributeValue where attr_id=27, object_id is rack, uint_value is the height
-						rack_name = rack[1]
-						rack_comment = rack[4]
-						rack_tags = getTags(cursor, "rack", rack[0])
-						rack_height = getRackHeight(cursor, rack[0])
+						rack_tags = getTags(cursor, "rack", rack_id)
+						rack_height = getRackHeight(cursor, rack_id)
 
-						atoms = getAtomsAtRack(cursor, rack[0])
+						atoms = getAtomsAtRack(cursor, rack_id)
 						
 						# Make sure rack name does not already contain row
 						if not rack_name.startswith(row_name.rstrip(".") + "."):
@@ -986,12 +1039,9 @@ Interface_Name:
 						
 						# Racks do NOT require a unique name, but they are given one by this script.
 						# Otherwise get_racks() based on name only would be wrong to use
-						if not netbox.dcim.get_racks(name=rack_name):
-							netbox.dcim.create_rack(name=rack_name,comment=rack_comment[:200] if rack_comment else "",site_name=site_name,u_height=rack_height,tags=rack_tags)
+						rack = netbox.dcim.create_rack(name=rack_name,comment=rack_comment[:200] if rack_comment else "",site_name=site_name,u_height=rack_height,tags=rack_tags)
 
-						createObjectsInRackFromAtoms(cursor, atoms, rack_name)
-
-				print("")
+						createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack['id'])
 
 		pickleDump("global_physical_object_ids", global_physical_object_ids)
 
@@ -1000,7 +1050,7 @@ Interface_Name:
 		# Use id as porta or portb in Link table to get the parent/linked object
 	
 	else:
-		pickleLoad("global_physical_object_ids", set())
+		global_physical_object_ids = pickleLoad("global_physical_object_ids", set())
 
 	# Create non racked device, some of which required the physical devices above as parents
 	print("\n\nAbout to create non racked devices")
@@ -1022,7 +1072,7 @@ Interface_Name:
 			existing_device_bays[parent_name].add(device_bay['name'])
 
 		for objtype_id in objtype_id_names:
-			print("\n\nobjtype_id {}\n\n".format(objtype_id))
+			print("\n\nobjtype_id {} {}\n\n".format(objtype_id, objtype_id_names[objtype_id]))
 
 			# Get all objects of that objtype_id and try to create them if they do not exist
 			cursor.execute("SELECT id,name,label,asset_no,comment FROM Object WHERE objtype_id={}".format(objtype_id))
@@ -1069,7 +1119,7 @@ Interface_Name:
 		for device_list in (global_physical_object_ids, global_non_physical_object_ids):
 			for device_name, racktables_object_id, netbox_id in device_list:
 
-				print(device_name, racktables_object_id, netbox_id)
+				# print(device_name, racktables_object_id, netbox_id)
 
 				cursor.execute("SELECT id,name,iif_id,type,label FROM Port WHERE object_id={}".format(racktables_object_id))
 				ports = cursor.fetchall()
@@ -1084,13 +1134,16 @@ Interface_Name:
 
 					PortOuterInterface = PortOuterInterfaces[Type]
 
-					interface_name = interface_name.strip()
+					if interface_name:
+						interface_name = interface_name.strip()
+					else:
+						continue
 
 					# Create regular interface, which all things need to be to create connections accross devices
 					if interface_name not in interface_local_names_for_device[netbox_id]:
 						
 						if not interface_name:
-							print("No interface_name", interface_name,"\n\n\n")
+							print("No interface_name", Id,"\n\n\n")
 							continue
 						if not netbox_id:
 							print("No netbox_id", netbox_id,"\n\n\n")
@@ -1117,18 +1170,21 @@ Interface_Name:
 					interface_counter += 1
 					if interface_counter % 500 == 0:
 						print("Created {} interfaces".format(interface_counter))
+		
+		pickleDump('connection_ids', connection_ids)
+
 
 	# The "interfaces" created from the IP addresses below don't need connections made because they are "IP Addresses" in RT, whereas connections are made for "ports and links" which was done before
 
 	# Create interface connections
 	if CREATE_INTERFACE_CONNECTIONS:
 		print("Creating interface connections")
+		connection_ids = pickleLoad('connection_ids', dict())
 
 		# Create the interface connections based on racktable's Link table's storage of
 		cursor.execute("SELECT porta,portb,cable FROM Link")
 		connections = cursor.fetchall()
 
-		interface_counter = 0
 		for interface_a, interface_b, cable in connections:
 			# These error are fixed by including more objtype_ids in the global list for non racked devices
 			if interface_a not in connection_ids:
@@ -1136,16 +1192,14 @@ Interface_Name:
 				continue
 			
 			if interface_b not in connection_ids:
-				print("ERROR" interface_b, "b not in")
+				print("ERROR", interface_b, "b not in")
 				continue
 
 			netbox_id_a = connection_ids[interface_a]
 			netbox_id_b = connection_ids[interface_b]
-			netbox.dcim.create_interface_connection(netbox_id_a, netbox_id_b)
 
-			interface_counter += 1
+			netbox.dcim.create_interface_connection(netbox_id_a, netbox_id_b, 'dcim.interface', 'dcim.interface')
 
-		print("Created {} interface connections".format(interface_counter))
 
 	device_names = dict()
 	cursor.execute("SELECT id,name FROM Object")	
@@ -1169,8 +1223,7 @@ Interface_Name:
 		cursor.execute("SELECT id,ip,mask,name,comment FROM IPv{}Network".format(IP))
 		ipv46Networks = cursor.fetchall()
 
-		prefix_counter = 0
-		for Id,ip,mask,prefix_name,comment in ipv46Networks:
+		for Id,ip,mask,prefix_name,comment in ipv46Networks if CREATE_IP_NETWORKS else []:
 			
 			# Skip the single IP addresses
 			if (IP == "4" and mask == 32) or (IP == "6" and mask == 128): 
@@ -1189,100 +1242,99 @@ Interface_Name:
 
 			tags = getTags(cursor, "ipv{}net".format(IP), Id)
 
-			print("Creaing {} {} in vlan {}".format(prefix, prefix_name, vlan_name))
+			# print("Creaing {} {} in vlan {}".format(prefix, prefix_name, vlan_name))
 			
 			# Description takes at most 200 characters
 			netbox.ipam.create_ip_prefix(vlan={"id":vlan_id} if vlan_name else None,prefix=prefix,description=comment[:200] if comment else "",custom_fields={'Prefix_Name': prefix_name},tags = [{'name': IPV4_TAG if IP == "4" else IPV6_TAG}] + tags)
 
-			prefix_counter += 1
-
-		print("Created {} IPv{} Networks".format(prefix_counter, IP))
-
 
 		print("Creating IPv{} Addresses".format(IP))
-		
-		# These IPs are the ones allocated to devices, not ones that are only reserved
-		device_ips = dict()
-		cursor.execute("SELECT ALO.object_id,ALO.ip,ALO.name,ALO.type,OBJ.objtype_id FROM IPv{}Allocation ALO, Object OBJ WHERE OBJ.id=ALO.object_id".format(IP))
-		ip_allocations = cursor.fetchall()
-		
-		for object_id,ip,interface_name,ip_type,objtype_id in ip_allocations:
-
-			# Random interface name for things that had no interface name in racktables
-			if ip not in device_ips:
-				device_ips[ip] = []
-
-			interface_name = interface_name.strip() if interface_name else "no_RT_name"+str(random.randint(0,99999))
-			device_name = device_names[object_id]
-			device_ips[ip].append((interface_name,ip_type,device_name,objtype_id))
-
-		# This loop is all IP addresses
-		# In order to associate the IP to a device's interface, lookup the device and if it has an interface called what we need
-		# Otherwise create a new dummy virtual interface with the name for that device
 		cursor.execute("SELECT ip,name,comment FROM IPv{}Address".format(IP))
 		ip_addresses = cursor.fetchall()
-		for device_ip,ip_name,comment in ip_addresses:
+		ip_names_comments = dict([(ip, (name, comment)) for ip,name,comment in ip_addresses])
+		# print(ip_names_comments)
+		
+		# These IPs are the ones allocated to devices, not ones that are only reserved
+		cursor.execute("SELECT ALO.object_id,ALO.ip,ALO.name,ALO.type,OBJ.objtype_id,OBJ.name FROM IPv{}Allocation ALO, Object OBJ WHERE OBJ.id=ALO.object_id".format(IP))
+		ip_allocations = cursor.fetchall()
 
-			string_ip = str(ipaddress.ip_address(device_ip)) + "{}".format("/32" if IP == "4" else "")
+		for object_id,ip,interface_name,ip_type,objtype_id,device_name in ip_allocations if CREATE_IP_ALLOCATED else []:
 
-			if string_ip in existing_ips:
+			if ip in ip_names_comments:
+				ip_name, comment = ip_names_comments[ip]
+			else:
+				ip_name, comment = "", ""
+
+			if device_name:
+				device_name = device_name.strip()
+			else:
 				continue
 
-			if device_ip in device_ips:
-				use_vrrp_role = "vrrp" if len(device_ips[device_ip]) > 1 else ""
-
-				for interface_name, ip_type, device_name,objtype_id in device_ips[device_ip]:
-					
-					device_contained_same_interface = False
-					
-					# Check through the interfaces that exist for this device in netbox, created previously
-					# If one exists with the same name as the IP has in racktables, add the ip to that
-					# Else create a dummy virtual interface with the new name and add the ip to that interface
-					# because Racktables allows you to give IP interfaces any name not necessarily one of the existing interfaces explicitly set as interfaces
-					
-					if objtype_id == 1504:
-						device_or_vm = "vm"
-						interface_list = netbox.virtualization.get_interfaces(virtual_machine=device_name)
-					else:
-						device_or_vm = "device"
-						interface_list = netbox.dcim.get_interfaces(device=device_name)
-
-					for name,interface_id in [(interface['name'], interface['id']) for interface in interface_list]:
-						
-						if interface_name == name:
-
-							netbox.ipam.create_ip_address(address=string_ip,assigned_object={'device'if device_or_vm == "device" else "virtual_machine":device_name},interface_type="virtual",assigned_object_type="dcim.interface" if device_or_vm == "device" else "virtualization.vminterface",assigned_object_id=interface_id,description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name,'Interface_Name':interface_name,'IP_Type':ip_type},tags=[{'name': IPV4_TAG if IP == "4" else IPV6_TAG}],role=use_vrrp_role)
-							device_contained_same_interface = True
-							break
-
-					if not device_contained_same_interface:
-
-						if device_or_vm == "device":
-							device_id = netbox.dcim.get_devices(name=device_name)[0]['id']
-						else:
-							device_id = netbox.virtualization.get_virtual_machines(name=device_name)
-
-						# print("Creating dummy {} virtual interface {} for {} and {}".format(device_or_vm, interface_name, device_name, string_ip))
-
-						# Because there is no way to access interfaces per device without querying the whole list of interfaces, do a try and except for iterating over the name
-						# An error would occur when there are duplicate IP interface names in RT
-						try:
-							if device_or_vm == "device":
-								added_interface = netbox.dcim.create_interface(name=interface_name,interface_type="virtual",device_id=device_id, custom_fields={"Device_Interface_Type": "Virtual"})
-							else:
-								added_interface = netbox.virtualization.create_interface(name=interface_name,interface_type="virtual",virtual_machine=device_name,custom_fields={"VM_Interface_Type": "Virtual"})
-						except:
-							# Probably had a name colision with interface_name
-							print("ERROR \n\n")
-							pass
-						
-						else:
-							# Make sure ip is not already on this interface?
-							netbox.ipam.create_ip_address(address=string_ip,assigned_object_id=added_interface['id'],assigned_object={"device" if device_or_vm == "device" else "virtual_machine" :{'id': device_id}},interface_type="virtual",assigned_object_type="dcim.interface" if device_or_vm == "device" else "virtualization.vminterface",description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name, 'Interface_Name': interface_name, 'IP_Type': ip_type},tags = [{'name': IPV4_TAG if IP == "4" else IPV6_TAG}])
-
-			# Add only the ip without any associated device
+			
+			string_ip = str(ipaddress.ip_address(ip)) + "{}".format("/32" if IP == "4" else "")
+			if string_ip in existing_ips and ip_type != "shared":
+				continue
 			else:
-				netbox.ipam.create_ip_address(address=string_ip,description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name},tags=[{'name': IPV4_TAG if IP == "4" else IPV6_TAG}])
+				existing_ips.add(string_ip)
+
+			use_vrrp_role = "vrrp" if ip_type == "shared" else ""
+
+			interface_name = interface_name.strip() if interface_name else "no_RT_name"+str(random.randint(0,99999))
+
+			# Check through the interfaces that exist for this device in netbox, created previously
+			# If one exists with the same name as the IP has in racktables, add the ip to that
+			# Else create a dummy virtual interface with the new name and add the ip to that interface
+			# because Racktables allows you to give IP interfaces any name not necessarily one of the existing interfaces explicitly set as interfaces
+			if objtype_id == 1504:
+				device_or_vm = "vm"
+				interface_list = netbox.virtualization.get_interfaces(virtual_machine=device_name)
+			else:
+				device_or_vm = "device"
+				interface_list = netbox.dcim.get_interfaces(device=device_name)
+
+			# print(device_name)
+
+			device_contained_same_interface = False
+			for name,interface_id in [(interface['name'], interface['id']) for interface in interface_list]:
+				
+				if interface_name == name:
+
+					netbox.ipam.create_ip_address(address=string_ip,assigned_object={'device'if device_or_vm == "device" else "virtual_machine":device_name},interface_type="virtual",assigned_object_type="dcim.interface" if device_or_vm == "device" else "virtualization.vminterface",assigned_object_id=interface_id,description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name,'Interface_Name':interface_name,'IP_Type':ip_type},tags=[{'name': IPV4_TAG if IP == "4" else IPV6_TAG}],role=use_vrrp_role)
+					
+					device_contained_same_interface = True
+					break
+
+			if not device_contained_same_interface:
+
+				if device_or_vm == "device":
+					device_id = netbox.dcim.get_devices(name=device_name)[0]['id']
+				else:
+					device_id = netbox.virtualization.get_virtual_machines(name=device_name)[0]['id']
+
+				# print("Creating dummy {} virtual interface {} for {} and {}".format(device_or_vm, interface_name, device_name, string_ip))
+				# Because there is no way to access interfaces per device without querying the whole list of interfaces, do a try and except for iterating over the name
+				# An error would occur when there are duplicate IP interface names in RT
+				try:
+					if device_or_vm == "device":
+						added_interface = netbox.dcim.create_interface(name=interface_name,interface_type="virtual",device_id=device_id, custom_fields={"Device_Interface_Type": "Virtual"})
+					else:
+						added_interface = netbox.virtualization.create_interface(name=interface_name,interface_type="virtual",virtual_machine=device_name,custom_fields={"VM_Interface_Type": "Virtual"})
+				except:
+					# Probably had a name colision with interface_name
+					print("ERROR \n\n")
+					pass
+				
+				else:
+					# Make sure ip is not already on this interface?
+					netbox.ipam.create_ip_address(address=string_ip,assigned_object_id=added_interface['id'],assigned_object={"device" if device_or_vm == "device" else "virtual_machine" :{'id': device_id}},interface_type="virtual",assigned_object_type="dcim.interface" if device_or_vm == "device" else "virtualization.vminterface",description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name, 'Interface_Name': interface_name, 'IP_Type': ip_type},tags = [{'name': IPV4_TAG if IP == "4" else IPV6_TAG}])
+
+		# Add ip without any associated device
+		for ip in ip_names_comments if CREATE_IP_NOT_ALLOCATED else []:
+			string_ip = str(ipaddress.ip_address(ip)) + "{}".format("/32" if IP == "4" else "")
+			if string_ip in existing_ips:
+				continue
+			ip_name, comment = ip_names_comments[ip]
+			netbox.ipam.create_ip_address(address=string_ip,description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name},tags=[{'name': IPV4_TAG if IP == "4" else IPV6_TAG}])
 
 	
 
