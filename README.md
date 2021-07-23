@@ -20,7 +20,7 @@ Python package requirements: `python3 -m pip install python-netbox python-slugif
 
 **vm.py**
 
-Update the uniquely named VMs in NB with memory, disk and cpu data from RHEVM instances. Because two VMs can be in separate clusters and have the same name, any not uniquely named VM is ignored.
+Update the uniquely named VMs in NB with memory, disk and cpu data from RHEVM instances. Because two VMs can be in separate clusters with the same name and there is no mapping between RT cluster names and RHEVM cluster names, any not uniquely named VM is ignored. 
 Code is there to compare NICs and IPs as well.
 
 Python package requirements `python3 -m pip install python-netbox bs4`
