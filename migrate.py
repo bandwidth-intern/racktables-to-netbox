@@ -43,8 +43,8 @@ rt_user = 'root'
 rt_db = 'test1'
 connection = pymysql.connect(host=rt_host,user=rt_user,db=rt_db, port=rt_port)
 
-nb_host = 
-nb_port = 
+nb_host = '10.248.48.4'
+nb_port = 8000
 nb_token = '0123456789abcdef0123456789abcdef01234567'
 
 netbox = NetBox(host=nb_host, port=nb_port, use_ssl=False, auth_token=nb_token)
@@ -96,6 +96,32 @@ parent_child_objtype_id_pairs = (
 	(9, 9),# Patch Panel inside a Patch Panel
 )
 
+# Some interfaces might have a name including "Eth", then have an IP with name "Ethernet"
+# This dict will try to eliminate the difference to clean up the number of "Virtual" and "Other" type interfaces
+# Convert the short name into the long name
+# These only apply to objects of type "Router", 7, and "Network switch", 8
+interface_name_mappings = {
+	"Eth": "Ethernet",
+	"eth": "Ethernet",
+	"ethernet": "Ethernet",
+
+	"Po": "Port-Channel",
+	"Port-channel": "Port-Channel",
+
+	"BE": "Bundle-Ether",
+	"Lo": "Loopback",
+	"Loop": "Loopback",
+	"Vl": "VLAN",
+	"Vlan": "VLAN",
+	"Mg": "MgmtEth",
+	"Se": "Serial",
+	"Gi": "GigabitEthernet",
+	"Te": "TenGigE",
+	"Tw": "TwentyFiveGigE",
+	"Fo": "FortyGigE",
+	"Hu": "HundredGigE",
+}
+
 parent_objtype_ids = [pair[0] for pair in parent_child_objtype_id_pairs]
 
 global_names = set()
@@ -127,6 +153,11 @@ slugified_attributes = dict()
 
 # Turn the uint_value for attr_id 2 in table "AttributeValue" into a string from the table "Dictionary"
 hw_types = dict()
+
+def error_log(string):
+	with open("errors", "a") as error_file:
+		error_file.write(string + "\n")
+
 
 # return the "HW Type" for the given racktables object
 def get_hw_type(racktables_object_id):
@@ -394,14 +425,14 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 	for Id in remove_original_Ids:
 		atoms_dict.pop(Id)
 
-	# Cut off the extra character added to distinguish the same device in multiple locations in a rack
-	def real_id(Id):
-		return int(Id[:-1])
-
 	# Start to calculate sizes and add devices
 	for Id in atoms_dict:
+		
+		# Cut off the extra character added to distinguish the same device in multiple locations in a rack
+		real_id = int(Id[:-1])
+
 		if len(atoms_dict[Id]) == 0:
-			print("Got a 0 len for", real_id(Id))
+			print("Got a 0 len for", real_id)
 			continue
 
 		start_height = min([atom[1] for atom in atoms_dict[Id]])
@@ -410,22 +441,23 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 		# UPDATE HERE: Should this be == str or startswith if there are multiple reservation splits???
 		if Id == str(None) + first_ascii_character:
 			try:
-				print("Reservation at {}")
 				units = list(range(start_height, start_height+height))
+
+				print("Reservation at {}".format(real_id))
 				netbox.dcim.create_reservation(rack_num=rack_id,units=units,description=".",user='admin')
-				pass
-			except:
-				pass
+
+			except Exception as e:
+				print(str(e))
 
 			continue
 
-		cursor.execute("SELECT id,name,label,objtype_id,has_problems,comment,asset_no FROM Object WHERE id={};".format(real_id(Id)))
+		cursor.execute("SELECT id,name,label,objtype_id,has_problems,comment,asset_no FROM Object WHERE id={};".format(real_id))
 		info = cursor.fetchall()[0]
 		objtype_id = info[3]
 		device_name = info[1]
 		asset_no = info[-1]
 		
-		device_tags = getTags(cursor, "object", real_id(Id))
+		device_tags = getTags(cursor, "object", real_id)
 		
 		# Whether front only, rear only, or both
 		if 'rear' not in [atom[2] for atom in atoms_dict[Id]]:
@@ -440,7 +472,7 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 			face = 'front'
 			is_full_depth = True
 		
-		manufacturer, device_role, device_type_model = get_manufacturer_role_type(cursor, real_id(Id), objtype_id, height, is_full_depth)
+		manufacturer, device_role, device_type_model = get_manufacturer_role_type(cursor, real_id, objtype_id, height, is_full_depth)
 
 		if device_role not in global_device_roles:
 			netbox.dcim.create_device_role(device_role,"ffffff",slugify(device_role))
@@ -464,10 +496,10 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 
 		# Try to create a device at specific location. 
 		# Function looks for the location to be open, then tries different names since device names must be unique
-		device_name, device_id = createDeviceAtLocationInRack(device_name=device_name, face=face, start_height=start_height, device_role=device_role, manufacturer=manufacturer, device_type_model=device_type_model,site_name= site_name,rack_name=rack_name, asset_no=asset_no, racktables_device_id=real_id(Id))
+		device_name, device_id = createDeviceAtLocationInRack(device_name=device_name, face=face, start_height=start_height, device_role=device_role, manufacturer=manufacturer, device_type_model=device_type_model,site_name= site_name,rack_name=rack_name, asset_no=asset_no, racktables_device_id=real_id)
 
 		# Store all the device object_ids and names in the rack to later create the interfaces and ports
-		global_physical_object_ids.add((device_name, info[0], device_id))
+		global_physical_object_ids.add((device_name, info[0], device_id, objtype_id))
 
 def getRackHeight(cursor, rackId):
 	cursor.execute("SELECT uint_value FROM AttributeValue WHERE object_id={} AND attr_id=27;".format(rackId))
@@ -489,8 +521,8 @@ def get_interfaces():
 		ret = netbox.dcim.get_interfaces_custom(limit=limit, offset=offset)
 		if ret:
 			interfaces.extend(ret)
-			print("Added {} interfaces, total {}".format(limit, len(interfaces)))
 			offset += limit
+			print("Added {} interfaces, total {}".format(limit, len(interfaces)))
 		else:
 			pickleDump(interfaces_file, interfaces)
 			return interfaces
@@ -565,7 +597,7 @@ def create_parent_child_devices(cursor, data, objtype_id):
 			
 			manufacturer, device_role, device_type_model = get_manufacturer_role_type(cursor, racktables_device_id, objtype_id, 0, False)
 
-			print("Starting {}".format(object_name))
+			# print("Starting {}".format(object_name))
 
 			if site_name not in existing_site_names:
 				netbox.dcim.create_site(site_name, slugify(site_name))
@@ -678,7 +710,7 @@ def create_parent_child_devices(cursor, data, objtype_id):
 			asset_tags.add(asset_no)
 
 			# Later used for creating interfaces
-			global_non_physical_object_ids.add((object_name, racktables_device_id, added_device['id']))
+			global_non_physical_object_ids.add((object_name, racktables_device_id, added_device['id'], objtype_id))
 
 			# If device was a child device mounted inside a physically mounted parent device, then create a device bay relating to the parent device filled with the just created item
 			# Only one device can be assigned to each bay, so find the first open device bay name for the parent device, then use try and except to add the added device to it, although it should not fail since the child device was just created above
@@ -697,6 +729,24 @@ def create_parent_child_devices(cursor, data, objtype_id):
 				netbox.dcim.create_device_bay(new_bay_name, device_id=is_child_parent_id, installed_device_id=added_device['id'])
 
 	return not_created_parents
+
+def change_interface_name(interface_name, objtype_id):
+	interface_name = interface_name.strip()
+
+	global interface_name_mappings
+	
+	if objtype_id in (7, 8):
+		for prefix in interface_name_mappings:
+			# Make sure the prefix is followed by a number so Etherent doesn't become Etherneternet
+			if interface_name.startswith(prefix) and len(interface_name) > len(prefix) and interface_name[len(prefix)] in "0123456789- ":
+				new_interface_name = interface_name.replace(prefix, interface_name_mappings[prefix], 1)
+				
+				with open("prefixes", "a") as file:
+					file.write("{} => {}\n".format(interface_name, new_interface_name))
+
+				interface_name = new_interface_name
+
+	return interface_name
 
 with connection.cursor() as cursor:
 	
@@ -1117,7 +1167,7 @@ Interface_Name:
 		interface_counter = 0
 		print("Creating interfaces for devices")
 		for device_list in (global_physical_object_ids, global_non_physical_object_ids):
-			for device_name, racktables_object_id, netbox_id in device_list:
+			for device_name, racktables_object_id, netbox_id, objtype_id in device_list:
 
 				# print(device_name, racktables_object_id, netbox_id)
 
@@ -1135,7 +1185,7 @@ Interface_Name:
 					PortOuterInterface = PortOuterInterfaces[Type]
 
 					if interface_name:
-						interface_name = interface_name.strip()
+						interface_name = change_interface_name(interface_name, objtype_id)
 					else:
 						continue
 
@@ -1161,7 +1211,7 @@ Interface_Name:
 						connection_ids[Id] = added_interface['id']
 
 					else:
-						print("exitsts")
+						print(Id, interface_name, "exists")
 
 						# Link racktables interface id to netbox interface id based on the local name.
 						connection_ids[Id] = interface_netbox_ids_for_device[netbox_id][interface_name]
@@ -1198,7 +1248,10 @@ Interface_Name:
 			netbox_id_a = connection_ids[interface_a]
 			netbox_id_b = connection_ids[interface_b]
 
-			netbox.dcim.create_interface_connection(netbox_id_a, netbox_id_b, 'dcim.interface', 'dcim.interface')
+			try:
+				netbox.dcim.create_interface_connection(netbox_id_a, netbox_id_b, 'dcim.interface', 'dcim.interface')
+			except:
+				error_log("Interface connection error {} {}".format(netbox_id_a, netbox_id_b))
 
 
 	device_names = dict()
@@ -1279,7 +1332,13 @@ Interface_Name:
 
 			use_vrrp_role = "vrrp" if ip_type == "shared" else ""
 
-			interface_name = interface_name.strip() if interface_name else "no_RT_name"+str(random.randint(0,99999))
+			if interface_name:
+				interface_name = change_interface_name(interface_name.strip(), objtype_id)
+			else:
+				interface_name = "no_RT_name"+str(random.randint(0,99999))
+
+
+			
 
 			# Check through the interfaces that exist for this device in netbox, created previously
 			# If one exists with the same name as the IP has in racktables, add the ip to that
