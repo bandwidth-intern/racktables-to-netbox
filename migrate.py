@@ -37,6 +37,8 @@ CREATE_IP_NOT_ALLOCATED =      True
 # The length to exceed for a site to be considered a location (like an address) not a site
 SITE_NAME_LENGTH_THRESHOLD = 10
 
+STORE_DATA = False
+
 rt_host = '127.0.0.1'
 rt_port = 3306
 rt_user = 'root'
@@ -44,7 +46,7 @@ rt_db = 'test1'
 connection = pymysql.connect(host=rt_host,user=rt_user,db=rt_db, port=rt_port)
 
 nb_host = '10.248.48.4'
-nb_port = 8000
+nb_port = 8001
 nb_token = '0123456789abcdef0123456789abcdef01234567'
 
 netbox = NetBox(host=nb_host, port=nb_port, use_ssl=False, auth_token=nb_token)
@@ -175,9 +177,10 @@ def pickleLoad(filename, default):
 	return default
 
 def pickleDump(filename, data):
-	file = open(filename, 'wb')
-	pickle.dump(data, file)
-	file.close()
+	if STORE_DATA:
+		file = open(filename, 'wb')
+		pickle.dump(data, file)
+		file.close()
 
 def getRowsAtSite(cursor, siteId):
 	rows = []
@@ -429,12 +432,7 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 	for Id in atoms_dict:
 		
 		# Cut off the extra character added to distinguish the same device in multiple locations in a rack
-		real_id = int(Id[:-1])
-
-		if len(atoms_dict[Id]) == 0:
-			print("Got a 0 len for", real_id)
-			continue
-
+		
 		start_height = min([atom[1] for atom in atoms_dict[Id]])
 		height = max([atom[1] for atom in atoms_dict[Id]]) - start_height + 1
 
@@ -443,13 +441,15 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 			try:
 				units = list(range(start_height, start_height+height))
 
-				print("Reservation at {}".format(real_id))
+				print("Reservation")
 				netbox.dcim.create_reservation(rack_num=rack_id,units=units,description=".",user='admin')
 
 			except Exception as e:
 				print(str(e))
 
 			continue
+
+		real_id = int(Id[:-1])
 
 		cursor.execute("SELECT id,name,label,objtype_id,has_problems,comment,asset_no FROM Object WHERE id={};".format(real_id))
 		info = cursor.fetchall()[0]
@@ -741,8 +741,8 @@ def change_interface_name(interface_name, objtype_id):
 			if interface_name.startswith(prefix) and len(interface_name) > len(prefix) and interface_name[len(prefix)] in "0123456789- ":
 				new_interface_name = interface_name.replace(prefix, interface_name_mappings[prefix], 1)
 				
-				with open("prefixes", "a") as file:
-					file.write("{} => {}\n".format(interface_name, new_interface_name))
+				# with open("prefixes", "a") as file:
+					# file.write("{} => {}\n".format(interface_name, new_interface_name))
 
 				interface_name = new_interface_name
 
@@ -1330,15 +1330,13 @@ Interface_Name:
 			else:
 				existing_ips.add(string_ip)
 
-			use_vrrp_role = "vrrp" if ip_type == "shared" else ""
+			use_vrrp_role = "vrrp" if ip_type == "shared" else None
 
 			if interface_name:
 				interface_name = change_interface_name(interface_name.strip(), objtype_id)
 			else:
 				interface_name = "no_RT_name"+str(random.randint(0,99999))
 
-
-			
 
 			# Check through the interfaces that exist for this device in netbox, created previously
 			# If one exists with the same name as the IP has in racktables, add the ip to that
@@ -1358,7 +1356,7 @@ Interface_Name:
 				
 				if interface_name == name:
 
-					netbox.ipam.create_ip_address(address=string_ip,assigned_object={'device'if device_or_vm == "device" else "virtual_machine":device_name},interface_type="virtual",assigned_object_type="dcim.interface" if device_or_vm == "device" else "virtualization.vminterface",assigned_object_id=interface_id,description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name,'Interface_Name':interface_name,'IP_Type':ip_type},tags=[{'name': IPV4_TAG if IP == "4" else IPV6_TAG}],role=use_vrrp_role)
+					netbox.ipam.create_ip_address(address=string_ip,role=use_vrrp_role,assigned_object={'device'if device_or_vm == "device" else "virtual_machine":device_name},interface_type="virtual",assigned_object_type="dcim.interface" if device_or_vm == "device" else "virtualization.vminterface",assigned_object_id=interface_id,description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name,'Interface_Name':interface_name,'IP_Type':ip_type},tags=[{'name': IPV4_TAG if IP == "4" else IPV6_TAG}])
 					
 					device_contained_same_interface = True
 					break
@@ -1385,7 +1383,7 @@ Interface_Name:
 				
 				else:
 					# Make sure ip is not already on this interface?
-					netbox.ipam.create_ip_address(address=string_ip,assigned_object_id=added_interface['id'],assigned_object={"device" if device_or_vm == "device" else "virtual_machine" :{'id': device_id}},interface_type="virtual",assigned_object_type="dcim.interface" if device_or_vm == "device" else "virtualization.vminterface",description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name, 'Interface_Name': interface_name, 'IP_Type': ip_type},tags = [{'name': IPV4_TAG if IP == "4" else IPV6_TAG}])
+					netbox.ipam.create_ip_address(address=string_ip,role=use_vrrp_role,assigned_object_id=added_interface['id'],assigned_object={"device" if device_or_vm == "device" else "virtual_machine" :{'id': device_id}},interface_type="virtual",assigned_object_type="dcim.interface" if device_or_vm == "device" else "virtualization.vminterface",description=comment[:200] if comment else "",custom_fields={'IP_Name': ip_name, 'Interface_Name': interface_name, 'IP_Type': ip_type},tags = [{'name': IPV4_TAG if IP == "4" else IPV6_TAG}])
 
 		# Add ip without any associated device
 		for ip in ip_names_comments if CREATE_IP_NOT_ALLOCATED else []:
