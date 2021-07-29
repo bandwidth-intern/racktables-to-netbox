@@ -750,81 +750,6 @@ def change_interface_name(interface_name, objtype_id):
 
 with connection.cursor() as cursor:
 	
-	print("""VLAN_Domain_ID:
-  type: text
-  description: ID for VLAN Domain
-  required: true
-  weight: 0
-  on_objects:
-  - ipam.models.VLANGroup
-Prefix_Name:
-  type: text
-  description: Name for prefix
-  required: false
-  weight: 0
-  on_objects:
-  - ipam.models.Prefix
-Device_Label:
-  type: text
-  description: Label for device
-  required: false
-  weight: 0
-  on_objects:
-  - dcim.models.Device
-VM_Asset_No:
-  type: text
-  description: Asset number for VMs
-  required: false
-  weight: 0
-  on_objects:
-  - virtualization.models.VirtualMachine
-VM_Label:
-  type: text
-  description: Label for VMs
-  required: false
-  weight: 0
-  on_objects:
-  - virtualization.models.VirtualMachine
-VM_Interface_Type:
-  type: text
-  label: Custom type for VM interfaces
-  description: Enter type for VM interface
-  required: true
-  weight: 0
-  on_objects:
-  - virtualization.models.VMInterface
-Device_Interface_Type:
-  type: text
-  label: Custom type for interfaces
-  description: Enter type for interface
-  required: true
-  weight: 0
-  on_objects:
-  - dcim.models.Interface
-IP_Type:
-  type: text
-  label: Type
-  description: Type of ip
-  required: false
-  weight: 0
-  on_objects:
-  - ipam.models.IPAddress
-IP_Name:
-  type: text
-  label: Type
-  description: Name of ip
-  required: false
-  weight: 0
-  on_objects:
-  - ipam.models.IPAddress
-Interface_Name:
-  type: text
-  label: Type
-  description: Name of interface for this IP
-  required: false
-  weight: 0
-  on_objects:
-  - ipam.models.IPAddress""")
 
 	# Get all the mapping of attr_id to the name of the attribute from the table "Attribute"
 	# Create these as custom fields for devices
@@ -847,14 +772,14 @@ Interface_Name:
 	for Id,Type,name in yellow_attributes:
 		slugified_attributes[Id] = name.replace(" ","_").replace("#","").replace(",","").replace("/","").replace(".","").strip("_")
 
-		print("""{}:
-  type: {}
-  required: false
-  weight: 0
-  on_objects:
-  - dcim.models.Device""".format(slugified_attributes[Id], {"string": "text", "uint":"integer", "date":"text", "float":"integer","dict":"text"}[Type]))
+# 		print("""{}:
+#   type: {}
+#   required: false
+#   weight: 0
+#   on_objects:
+#   - dcim.models.Device""".format(slugified_attributes[Id], {"string": "text", "uint":"integer", "date":"text", "float":"integer","dict":"text"}[Type]))
 
-	print("\n\nPaste that in the intializers/custom_fields.yml file for this program to work!")
+# 	print("\n\nPaste that in the intializers/custom_fields.yml file for this program to work!")
 	print("Make sure to also set the page limit to 0 in the conf.env file")
 
 	# Create all the tags
