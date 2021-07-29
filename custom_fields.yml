@@ -1,0 +1,351 @@
+VLAN_Domain_ID:
+  type: text
+  description: ID for VLAN Domain
+  required: true
+  weight: 0
+  on_objects:
+  - ipam.models.VLANGroup
+Prefix_Name:
+  type: text
+  description: Name for prefix
+  required: false
+  weight: 0
+  on_objects:
+  - ipam.models.Prefix
+Device_Label:
+  type: text
+  description: Label for device
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+VM_Asset_No:
+  type: text
+  description: Asset number for VMs
+  required: false
+  weight: 0
+  on_objects:
+  - virtualization.models.VirtualMachine
+VM_Label:
+  type: text
+  description: Label for VMs
+  required: false
+  weight: 0
+  on_objects:
+  - virtualization.models.VirtualMachine
+VM_Interface_Type:
+  type: text
+  label: Custom type for VM interfaces
+  description: Enter type for VM interface
+  required: true
+  weight: 0
+  on_objects:
+  - virtualization.models.VMInterface
+Device_Interface_Type:
+  type: text
+  label: Custom type for interfaces
+  description: Enter type for interface
+  required: true
+  weight: 0
+  on_objects:
+  - dcim.models.Interface
+IP_Type:
+  type: text
+  label: Type
+  description: Type of ip
+  required: false
+  weight: 0
+  on_objects:
+  - ipam.models.IPAddress
+IP_Name:
+  type: text
+  label: Name
+  description: Name of ip
+  required: false
+  weight: 0
+  on_objects:
+  - ipam.models.IPAddress
+Interface_Name:
+  type: text
+  label: Interface Name
+  description: Name of interface for this IP
+  required: false
+  weight: 0
+  on_objects:
+  - ipam.models.IPAddress
+OEM_SN_1:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+HW_type:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+FQDN:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+SW_type:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+SW_version:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+number_of_ports:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+max_current_Ampers:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+power_load_percents:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+max_power_Watts:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+contact_person:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+flash_memory_MB:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+DRAM_MB:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+CPU_MHz:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+OEM_SN_2:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Support_Contract_Expiration:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+HW_warranty_expiration:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+SW_warranty_expiration:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+UUID:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Hypervisor:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Height_units:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Slot_number:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Sort_order:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Mgmt_type:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+base_MAC_address:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+RAM_MB:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Processor:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Total_Disk_GB:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Processor_Count:
+  type: integer
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Service_Tag:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+PDU:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Circuit:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Contract_Number:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+DSP_Slot_1_Serial:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+DSP_Slot_2_Serial:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+DSP_Slot_3_Serial:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+DSP_Slot_4_Serial:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Chassis_Serial:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+SBC_PO:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Chassis_Model:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+Application_SW_Version:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+RHVM_URL:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+TIPC_NETID:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+CE_IP_Active:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+CE_IP_Standby:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+GPU_Serial_Number_1:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
+GPU_Serial_Number_2:
+  type: text
+  required: false
+  weight: 0
+  on_objects:
+  - dcim.models.Device
