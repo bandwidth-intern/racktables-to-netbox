@@ -18,6 +18,10 @@ Steps that depend on others create cached data on disk, but the best procedure i
 
 Python package requirements: `python3 -m pip install python-netbox python-slugify`
 
+**custom_fields.yml**
+
+The file to supply to the Netbox instance for custom fields. Thrse fields are expected by the migrate script and must be there.
+
 **vm.py**
 
 Update the uniquely named VMs in NB with memory, disk and cpu data from RHEVM instances. Because two VMs can be in separate clusters with the same name and there is no mapping between RT cluster names and RHEVM cluster names, any not uniquely named VM is ignored. 
