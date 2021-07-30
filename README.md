@@ -14,7 +14,7 @@ Scripts to export Racktables data, accessible through a SQL connection, into a [
 **migrate.py**
 
 Migrate data from RT to NB. Meant to be run once without interuption, although some bools exist to skip steps.
-Steps that depend on others create cached data on disk, but the best procedure is to fully run once on an empty NB instance. For certain interfaces, names are capitalized or have string replacement. See comments for details or to turn off.
+Steps that depend on others create cached data on disk, but the best procedure is to fully run once on an empty NB instance. For certain interfaces, names are capitalized or have string replacement. See comments for details or to turn off. If doing debugging and not running the script once, make sure to set `MAX_PAGE_SIZE=0` in `env/netbox.env` so that page fetch limits are disregarded.
 
 Python package requirements: `python3 -m pip install python-netbox python-slugify`
 
