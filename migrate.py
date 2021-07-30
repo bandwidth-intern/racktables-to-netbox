@@ -37,6 +37,7 @@ CREATE_IP_NOT_ALLOCATED =      True
 # The length to exceed for a site to be considered a location (like an address) not a site
 SITE_NAME_LENGTH_THRESHOLD = 10
 
+# Each step may cache some data relevant to the next step. This will stop that from happening in the pickle load function
 STORE_DATA = False
 
 rt_host = '127.0.0.1'
@@ -160,14 +161,6 @@ def error_log(string):
 	with open("errors", "a") as error_file:
 		error_file.write(string + "\n")
 
-
-# return the "HW Type" for the given racktables object
-def get_hw_type(racktables_object_id):
-	global hw_types
-	cursor.execute("SELECT uint_value FROM AttributeValue WHERE object_id={} AND attr_id=2;".format(racktables_object_id))
-	uint = cursor.fetchall()
-	return hw_types[uint[0][0]] if uint else None
-
 def pickleLoad(filename, default):
 	if os.path.exists(filename):
 		file = open(filename, 'rb')
@@ -181,6 +174,17 @@ def pickleDump(filename, data):
 		file = open(filename, 'wb')
 		pickle.dump(data, file)
 		file.close()
+		
+def getRackHeight(cursor, rackId):
+	cursor.execute("SELECT uint_value FROM AttributeValue WHERE object_id={} AND attr_id=27;".format(rackId))
+	return cursor.fetchall()[0][0]
+		
+# return the "HW Type" for the given racktables object
+def get_hw_type(racktables_object_id):
+	global hw_types
+	cursor.execute("SELECT uint_value FROM AttributeValue WHERE object_id={} AND attr_id=2;".format(racktables_object_id))
+	uint = cursor.fetchall()
+	return hw_types[uint[0][0]] if uint else None
 
 def getRowsAtSite(cursor, siteId):
 	rows = []
@@ -436,7 +440,7 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 		start_height = min([atom[1] for atom in atoms_dict[Id]])
 		height = max([atom[1] for atom in atoms_dict[Id]]) - start_height + 1
 
-		# UPDATE HERE: Should this be == str or startswith if there are multiple reservation splits???
+		# Should this be == str or startswith if there are multiple reservation splits?
 		if Id == str(None) + first_ascii_character:
 			try:
 				units = list(range(start_height, start_height+height))
@@ -501,10 +505,6 @@ def createObjectsInRackFromAtoms(cursor, atoms, rack_name, rack_id):
 		# Store all the device object_ids and names in the rack to later create the interfaces and ports
 		global_physical_object_ids.add((device_name, info[0], device_id, objtype_id))
 
-def getRackHeight(cursor, rackId):
-	cursor.execute("SELECT uint_value FROM AttributeValue WHERE object_id={} AND attr_id=27;".format(rackId))
-	return cursor.fetchall()[0][0]
-
 # Necessary to split get_interfaces() calls because the current 50,000 interfaces fails to ever return
 def get_interfaces():
 
@@ -515,9 +515,13 @@ def get_interfaces():
 	offset = 0
 
 	# Uncomment this if created interfaces successfully previously and have their data in the file
-	# return pickleLoad(interfaces_file, [])
+	# or get_interfaces_custom was not added (likely) and you are only running the script once without error
+	return pickleLoad(interfaces_file, [])
 
 	while True:
+		# In netbox-python dcim.py I defined this as: Some issue with setting limit and offset made it necessary
+		# def get_interfaces_custom(self, limit, offset, **kwargs):
+ 		#       return self.netbox_con.get('/dcim/interfaces', limit=limit, offset=offset, **kwargs)
 		ret = netbox.dcim.get_interfaces_custom(limit=limit, offset=offset)
 		if ret:
 			interfaces.extend(ret)
@@ -568,6 +572,7 @@ def create_parent_child_devices(cursor, data, objtype_id):
 	existing_manufacturers = set(manufacturer['name'] for manufacturer in netbox.dcim.get_manufacturers())
 	existing_device_types = set(device_type['model'] for device_type in netbox.dcim.get_device_types())
 	existing_device_names = set(device['name'].strip() for device in netbox.dcim.get_devices() if device['name'])
+	
 	# Map netbox parent device name to the names of its device bays
 	existing_device_bays = dict()
 
@@ -750,11 +755,6 @@ def change_interface_name(interface_name, objtype_id):
 
 with connection.cursor() as cursor:
 	
-
-	# Get all the mapping of attr_id to the name of the attribute from the table "Attribute"
-	# Create these as custom fields for devices
-	# Consider the special case of attr_id 26 which is really a true/false, not a dictionary
-
 	# For the HW Type field: use this as the base name for the device type
 
 	cursor.execute("SELECT object_id,string_value FROM AttributeValue WHERE attr_id=10014")
@@ -947,7 +947,7 @@ with connection.cursor() as cursor:
 			vm_counter += 1
 
 
-	# Mpa interface integer type to the string type
+	# Map interface integer type to the string type
 	cursor.execute("SELECT id,oif_name FROM PortOuterInterface;")
 	PortOuterInterfaces = dict()
 	for k,v in cursor.fetchall():
@@ -996,6 +996,7 @@ with connection.cursor() as cursor:
 				try:
 					netbox.dcim.create_site(site_name, slugify(site_name))
 				except:
+					print("Failed to create site", site_name)
 					pass
 
 				for row_id, row_name, row_label, row_asset_no, row_comment in getRowsAtSite(cursor, site_id):
