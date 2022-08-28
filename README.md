@@ -10,19 +10,23 @@ Scripts to export Racktables data, accessible through a SQL connection, into a [
 - Connections between interfaces really the 'ports and links' catagory
 - Tags, labels, asset numbers
 
+## How to use it:
+
+1. Put `custom_fields.yml` to `initializers/custom_fields.yml` when starting Netbox pack - [Netbox initializers](https://github.com/netbox-community/netbox-docker/tree/release/initializers).
+2. Read the [notes](https://github.com/bandwidth-intern/racktables-to-netbox#notes-on-python-netbox) and fix `dcim.py` in python-netbox local lib.
+3. Fill the connections credentials in migrate.py, install requirements `python3 -m pip install python-netbox python-slugify` and start the script `python3 migrate.py`.
+
 ## Files:
 **migrate.py**
 
 Migrate data from RT to NB. Meant to be run once without interuption, although some bools exist to skip steps.
 Steps that depend on others create cached data on disk, but the best procedure is to fully run once on an empty NB instance. For certain interfaces, names are capitalized or have string replacement. See comments for details or to turn off. If doing debugging and not running the script once, make sure to set `MAX_PAGE_SIZE=0` in `env/netbox.env` so that page fetch limits are disregarded.
 
-Python package requirements: `python3 -m pip install python-netbox python-slugify`
-
 **custom_fields.yml**
 
 The file to supply to the Netbox instance for custom fields. Thrse fields are expected by the migrate script and must be there.
 
-**vm.py**
+**rhevm_pull.py**
 
 Update the uniquely named VMs in NB with memory, disk and cpu data from RHEVM instances. Because two VMs can be in separate clusters with the same name and there is no mapping between RT cluster names and RHEVM cluster names, any not uniquely named VM is ignored. 
 Code is there to compare NICs and IPs as well.
@@ -36,5 +40,5 @@ List the number of free IP addresses in NB based on the tags on prefixes.
 Python package requirements `python3 -m pip install python-netbox`
 
 ## Notes on python-netbox:
-- As of July 2021 the pip code is not up to date to the Github repo, so you must manually update the `dcim.py` file's method `create_interface_connection` to match the up to date one on Github.
+- As of July 2021 the pip code is not up to date to the Github repo, so you must manually update the `dcim.py` file's method `create_interface_connection` deleted in this [commit](https://github.com/jagter/python-netbox/commit/279a2f77b25764db62283ed3e1337e94d9bc9812).
 - As of July 2021 [this PR](https://github.com/jagter/python-netbox/pull/49) hasn't been merged, so the `get_device_bays` method is not yet in `dcim.py` and must be added manually.
